@@ -247,7 +247,6 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         output_ids: List[int] = []
 
         batch_size = input_ids_tensor.size(0)
-        current_tokens = input_ids_tensor[:, -1]  # [batch_size]
         prev_hidden_state = torch.zeros(batch_size, model.config.hidden_size).to(input_ids_tensor.device)
 
         accept_count = 0
@@ -264,7 +263,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
                 num_speculations,
             ) = self.single_step_speculation(
                 model=model,
-                input_ids_list=input_ids_list,
+                input_ids_list=input_ids_tensor,
                 input_ids=input_ids,
                 output_ids=output_ids,
                 num_speculations=min(
@@ -301,8 +300,6 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
             prev_hidden_state = new_state
 
             exit_now = should_exit(confidence, generation_config.conf_threshold)  # [batch_size]
-            accept_count += exit_now.sum().item()
-            total_checks += 1
 
             if exit_now.any():
                 generation_config.exit_layer = generation_config.min_exit_layer
