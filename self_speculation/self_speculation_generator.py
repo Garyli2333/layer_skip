@@ -264,15 +264,24 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
                 num_speculations,
             ) = self.single_step_speculation(
                 model=model,
-                input_ids=input_ids_tensor,
+                input_ids_list=input_ids_list,
+                input_ids=input_ids,
                 output_ids=output_ids,
                 num_speculations=min(
                     generation_config.num_speculations,
                     generation_config.max_steps - len(output_ids) - 1,
                 ),
                 past_key_values=past_key_values,
+                exit_layer=generation_config.exit_layer,
                 eos_token_id=eos_token_id,
-                generation_config=generation_config,
+                calls=calls,
+                sample=generation_config.sample,
+                temperature=generation_config.temperature,
+                top_k=generation_config.top_k,
+                top_p=generation_config.top_p,
+                logits_processors=logits_processors,
+                stopping_criteria=stopping_criteria,
+                streamer=streamer,
             )
 
             accept_count += number_of_matches
@@ -315,14 +324,23 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
 
 
     def single_step_speculation(
-            self,
-            model: transformers.LlamaForCausalLM,
-            input_ids: torch.Tensor,
-            output_ids: List[int],
-            num_speculations: int,
-            past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
-            eos_token_id: int,
-            generation_config: GenerationConfig,
+        self,
+        model: transformers.LlamaForCausalLM,
+        input_ids: torch.Tensor,
+        input_ids_list: List[int],
+        output_ids: List[int],
+        num_speculations: int,
+        past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
+        eos_token_id: int,
+        calls: int,
+        exit_layer: int,
+        sample: Optional[bool] = False,
+        temperature: Optional[float] = 0.7,
+        top_k: Optional[int] = 50,
+        top_p: Optional[float] = 0.95,
+        logits_processors: Optional[transformers.generation.logits_process.LogitsProcessorList] = None,
+        stopping_criteria: Optional[transformers.StoppingCriteriaList] = None,
+        streamer: Optional[transformers.TextStreamer] = None
     ) -> Tuple[torch.Tensor, List[int], Optional[Tuple[torch.Tensor]], int, int]:
         prompt_length: int = input_ids.size(1)
         draft_input_ids = input_ids.clone()
@@ -376,9 +394,9 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         prefill_token_ids = torch.cat([input_ids, draft_output_ids_tensor], dim=-1)
 
         # Streamer handling
-        if generation_config.streamer and isinstance(generation_config.streamer, SpeculativeTextStreamer):
+        if streamer and isinstance(streamer, SpeculativeTextStreamer):
             print(colorama.Fore.LIGHTMAGENTA_EX, end="")
-            generation_config.streamer.put(draft_output_ids, is_draft=True)
+            streamer.put(draft_output_ids, is_draft=True)
 
         # Verification Step
         verify_results = forward_remainder(
@@ -391,8 +409,8 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         logits = verify_results.logits
         hidden_states_collected.extend(verify_results.hidden_states)
 
-        if generation_config.logits_processors:
-            logits = generation_config.logits_processors(prefill_token_ids, logits)
+        if logits_processors:
+            logits = logits_processors(prefill_token_ids, logits)
 
         past_key_values = verify_results.past_key_values
 
@@ -411,7 +429,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         verified_tokens = verified_tokens.to(prefill_token_ids.device)
         verified = draft_output_ids_tensor[:, :] == verified_tokens[:, :-1]
 
-        if not generation_config.sample:
+        if not sample:
             number_of_matches = ((~verified).cumsum(dim=-1) < 1).sum().item()
         else:
             number_of_matches = 0
@@ -431,15 +449,15 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         output_ids.extend(verified_tokens[0, number_of_matches:number_of_matches + 1].tolist())
 
         # Streamer handling after verification
-        if generation_config.streamer:
-            if isinstance(generation_config.streamer, SpeculativeTextStreamer):
-                generation_config.streamer.delete(len(draft_output_ids_tensor[0, :]))
+        if streamer:
+            if isinstance(streamer, SpeculativeTextStreamer):
+                streamer.delete(len(draft_output_ids_tensor[0, :]))
                 print(colorama.Fore.GREEN, end="")
-                generation_config.streamer.put(draft_output_ids_tensor[0, :number_of_matches])
+                streamer.put(draft_output_ids_tensor[0, :number_of_matches])
                 print(colorama.Style.RESET_ALL, end="")
-                generation_config.streamer.put(verified_tokens[0, number_of_matches:number_of_matches + 1])
+                streamer.put(verified_tokens[0, number_of_matches:number_of_matches + 1])
             else:
-                generation_config.streamer.put(torch.LongTensor(output_ids[-(number_of_matches + 1):]))
+               streamer.put(torch.LongTensor(output_ids[-(number_of_matches + 1):]))
 
         # Crop past_key_values to manage memory
         past_key_values = crop_past_key_values(
