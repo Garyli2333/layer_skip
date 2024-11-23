@@ -15,6 +15,7 @@ import transformers
 class ForwardResult:
     logits: torch.Tensor
     past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]]
+    hidden_states: Optional[List[torch.Tensor]] = None  # @ gary
     exit_query_cache: Optional[List[torch.Tensor]] = None
 
 # Copied from transformers.models.bart.modeling_bart.BartDecoder._prepare_decoder_attention_mask
@@ -189,6 +190,7 @@ def forward(
     )
 
     hidden_states = inputs_embeds
+    all_hidden_states = []
     for decoder_layer in model.model.layers:
         hidden_states, past_key_values = decoder_layer(
             hidden_states,
@@ -199,13 +201,13 @@ def forward(
             use_cache=True,
             padding_mask=None,
         )
-
+        all_hidden_states.append(hidden_states.clone())
     past_key_values = past_key_values.to_legacy_cache()
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
 
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values
+        logits=logits, past_key_values=past_key_values,hidden_states=all_hidden_states
     )
 
 
@@ -249,6 +251,7 @@ def forward_early(
     )
 
     hidden_states = inputs_embeds
+    all_hidden_states = []
     for decoder_layer in model.model.layers[:exit_layer]:
         hidden_states, past_key_values = decoder_layer(
             hidden_states,
@@ -259,6 +262,7 @@ def forward_early(
             use_cache=True,
             padding_mask=None,
         )
+        all_hidden_states.append(hidden_states.clone())
 
     past_key_values = past_key_values.to_legacy_cache()
 
@@ -272,7 +276,7 @@ def forward_early(
 
     logits = model.lm_head(hidden_states)
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache
+        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
     )
 
 
@@ -338,6 +342,7 @@ def forward_remainder(
 
     next_decoder_cache = []
     hidden_states = inputs_embeds
+    all_hidden_states = []
     # TODO simplify
     full_hidden_states: Optional[torch.FloatTensor] = None
     for idx, decoder_layer in enumerate(model.model.layers):
@@ -360,6 +365,7 @@ def forward_remainder(
                 use_cache=True,
                 padding_mask=None,
             )
+            all_hidden_states.append(hidden_states.clone())
         else:
             if full_hidden_states is None and exit_query_cache is not None:
                 # first time seeing the full hidden states, we need to rely on the
@@ -381,11 +387,12 @@ def forward_remainder(
                 use_cache=True,
                 padding_mask=None,
             )
+            all_hidden_states.append(hidden_states.clone())
 
     past_key_values = past_key_values.to_legacy_cache()
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
 
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache
+        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
     )

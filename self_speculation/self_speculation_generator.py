@@ -246,6 +246,10 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         input_ids_tensor = torch.tensor([input_ids]).to(model.device)
         output_ids: List[int] = []
 
+        batch_size = input_ids_tensor.size(0)
+        current_tokens = input_ids_tensor[:, -1]  # [batch_size]
+        prev_hidden_state = torch.zeros(batch_size, model.config.hidden_size).to(input_ids_tensor.device)
+
         accept_count = 0
         total_checks = 0
 
@@ -254,6 +258,8 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
                 input_ids,
                 output_ids,
                 past_key_values,
+                hidden_states_collected,
+                logits,
                 number_of_matches,
                 num_speculations,
             ) = self.single_step_speculation(
@@ -271,6 +277,26 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
 
             accept_count += number_of_matches
             total_checks += num_speculations
+
+            if hidden_states_collected:
+                new_state = hidden_states_collected[-1][:, -1, :]
+            else:
+                new_state = torch.zeros(batch_size, model.config.hidden_size).to(input_ids_tensor.device)
+
+            confidence = compute_confidence(
+                logits=logits[:, -1, :],
+                prev_state=prev_hidden_state,
+                new_state=new_state,
+                conf_method=generation_config.conf_method
+            )
+            prev_hidden_state = new_state
+
+            exit_now = should_exit(confidence, generation_config.conf_threshold)  # [batch_size]
+            accept_count += exit_now.sum().item()
+            total_checks += 1
+
+            if exit_now.any():
+                generation_config.exit_layer = generation_config.min_exit_layer
 
             if eos_token_id in output_ids:
                 output_ids = output_ids[:output_ids.index(eos_token_id)]
@@ -304,6 +330,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         if generation_config.sample:
             draft_probabilities: List[torch.Tensor] = []
         exit_query_cache = None
+        hidden_states_collected: List[torch.Tensor] = []
 
         number_of_matches = 0
         draft_num = 0
@@ -320,6 +347,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
             past_key_values = draft_result.past_key_values
             exit_query_cache = draft_result.exit_query_cache
             draft_logits = draft_result.logits
+            hidden_states_collected.extend(draft_result.hidden_states) # @ gary
 
             if generation_config.logits_processors:
                 draft_logits = generation_config.logits_processors(draft_input_ids, draft_logits)
@@ -361,6 +389,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
             exit_query_cache,
         )
         logits = verify_results.logits
+        hidden_states_collected.extend(verify_results.hidden_states)
 
         if generation_config.logits_processors:
             logits = generation_config.logits_processors(prefill_token_ids, logits)
@@ -422,22 +451,12 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         else:
             new_state = None
 
-        ## CALM Part @ Gary
-        confidence = compute_confidence(
-            logits=logits[:, -1, :],
-            prev_state=None,
-            new_state=new_state,
-            conf_method=generation_config.conf_method
-        )
-        exit_now = should_exit(confidence, generation_config.conf_threshold)
-
-        if exit_now.any():
-            generation_config.exit_layer = generation_config.min_exit_layer
-
         return (
             input_ids,
             output_ids,
             past_key_values,
+            hidden_states_collected,
+            logits,
             number_of_matches,
             draft_output_ids_tensor.numel(),
         )
@@ -466,40 +485,38 @@ class GenerationStrategyWithCALM(GenerationStrategy):
         total_checks = 0
 
         for step in range(generation_config.max_steps):
-            outputs = model(
-                input_ids=current_tokens.unsqueeze(-1),  # [batch_size, 1]
-                attention_mask=None,
+            (
+                next_token,
+                output_ids_step,
+                past_key_values,
+                new_hidden_state,
+                number_of_matches,
+                draft_num,
+            ) = self.single_step_speculation(
+                model=model,
+                current_tokens=current_tokens,
                 past_key_values=past_key_values,
-                output_hidden_states=True,
-                return_dict=True,
+                prev_hidden_state=prev_hidden_state,
+                generation_config=generation_config,
             )
-            logits = outputs.logits[:, -1, :]  # [batch_size, vocab_size]
-            hidden_state = outputs.hidden_states[-1][:, -1, :]  # [batch_size, hidden_size]
-
 
             confidence = compute_confidence(
                 logits=logits,
                 prev_state=prev_hidden_state,
-                new_state=hidden_state,
+                new_state=new_hidden_state,
                 conf_method=generation_config.conf_method
             )
+
+            prev_hidden_state = new_hidden_state
 
             exit_now = should_exit(confidence, generation_config.conf_threshold)  # [batch_size]
             accept_count += exit_now.sum().item()
             total_checks += 1
-            next_token, _ = decode_next_token(
-                logits=logits,
-                sample=generation_config.sample,
-                temperature=generation_config.temperature,
-                top_k=generation_config.top_k,
-                top_p=generation_config.top_p
-            )
 
-            output_ids.append(next_token.item())
-            current_tokens = next_token
-            prev_hidden_state = hidden_state
+            output_ids.extend(output_ids_step)
+            current_tokens = next_token.unsqueeze(0)
 
-            if torch.all(next_token == eos_token_id):
+            if next_token.item() == eos_token_id:
                 break
 
             if (step + 1) % generation_config.exit_interval != 0:
@@ -513,12 +530,13 @@ class GenerationStrategyWithCALM(GenerationStrategy):
         )
 
     def single_step_speculation(
-            self,
-            model: transformers.LlamaForCausalLM,
-            current_tokens: torch.Tensor,
-            past_key_values: Optional[Tuple[torch.Tensor]],
-            generation_config: GenerationConfig,
-    ) -> Tuple[torch.Tensor, List[int], Optional[Tuple[torch.Tensor]], int, int]:
+        self,
+        model: transformers.LlamaForCausalLM,
+        current_tokens: torch.Tensor,
+        past_key_values: Optional[Tuple[torch.Tensor]],
+        prev_hidden_state: torch.Tensor,
+        generation_config: GenerationConfig,
+    ) -> Tuple[torch.Tensor, List[int], Optional[Tuple[torch.Tensor]], torch.Tensor, int, int]:
         with torch.no_grad():
             outputs = model(
                 input_ids=current_tokens.unsqueeze(-1),
@@ -528,9 +546,10 @@ class GenerationStrategyWithCALM(GenerationStrategy):
             )
             logits = outputs.logits[:, -1, :]  # [batch_size, vocab_size]
             hidden_state = outputs.hidden_states[-1][:, -1, :]  # [batch_size, hidden_size]
+
             confidence = compute_confidence(
                 logits=logits,
-                prev_state=None,
+                prev_state=prev_hidden_state,
                 new_state=hidden_state,
                 conf_method=generation_config.conf_method
             )
@@ -551,17 +570,20 @@ class GenerationStrategyWithCALM(GenerationStrategy):
                 number_of_matches = 1
                 draft_num = 1
                 output_ids = [next_token.item()]
+                new_hidden_state = reduced_outputs.hidden_states[-1][:, -1, :]
             else:
                 next_token = torch.argmax(logits, dim=-1)
                 updated_past_key_values = outputs.past_key_values
                 number_of_matches = 0
                 draft_num = 0
-                output_ids = []
+                output_ids = [next_token.item()]
+                new_hidden_state = hidden_state
 
             return (
-                next_token.item(),
+                next_token,
                 output_ids,
                 updated_past_key_values,
+                new_hidden_state,
                 number_of_matches,
                 draft_num,
             )
