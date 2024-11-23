@@ -203,6 +203,7 @@ def forward(
         )
         all_hidden_states.append(hidden_states.clone())
 
+    past_key_values = past_key_values.to_legacy_cache()
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
 
@@ -266,13 +267,15 @@ def forward_early(
         )
         all_hidden_states.append(hidden_states.clone())
 
-    hidden_states = model.model.norm(hidden_states)
-    logits = model.lm_head(hidden_states)
+    past_key_values = past_key_values.to_legacy_cache()
 
     if exit_query_cache is None:
-        exit_query_cache = [hidden_states.clone()]
+        exit_query_cache = hidden_states
     else:
-        exit_query_cache = [torch.cat([cq, hs], dim=1) for cq, hs in zip(exit_query_cache, all_hidden_states)]
+        exit_query_cache = torch.cat([exit_query_cache, hidden_states], dim=1)
+
+    hidden_states = model.model.norm(hidden_states)
+    logits = model.lm_head(hidden_states)
 
     return ForwardResult(
         logits=logits,
