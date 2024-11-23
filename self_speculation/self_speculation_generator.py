@@ -245,6 +245,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
         past_key_values = None
         input_ids_tensor = torch.tensor([input_ids]).to(model.device)
         output_ids: List[int] = []
+        calls: int = 0
 
         batch_size = input_ids_tensor.size(0)
         prev_hidden_state = torch.zeros(batch_size, model.config.hidden_size).to(input_ids_tensor.device)
@@ -282,7 +283,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
                 stopping_criteria=stopping_criteria,
                 streamer=streamer,
             )
-
+            calls += 1
             accept_count += number_of_matches
             total_checks += num_speculations
 
