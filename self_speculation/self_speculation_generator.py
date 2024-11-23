@@ -367,8 +367,8 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
             draft_logits = draft_result.logits
             hidden_states_collected.extend(draft_result.hidden_states) # @ gary
 
-            if generation_config.logits_processors:
-                draft_logits = generation_config.logits_processors(draft_input_ids, draft_logits)
+            if logits_processors:
+                draft_logits = logits_processors(draft_input_ids, draft_logits)
 
             draft_next_token, draft_next_prob = decode_next_token(
                 logits=draft_logits,
