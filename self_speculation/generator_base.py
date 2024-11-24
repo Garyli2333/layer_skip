@@ -44,7 +44,7 @@ class GenerationConfig:
     stop_words: List[str] = None
 
     ## add parameters to incorporate CALM early exit @ gary
-    conf_threshold: float = 0.9
+    conf_threshold: float = 0.8
     conf_method: str = 'softmax_max'   # 'softmax_diff', 'state_cosine_similarity'
     min_exit_layer: int = 1
     exit_interval: int = 1

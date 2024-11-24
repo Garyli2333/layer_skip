@@ -15,8 +15,8 @@ import transformers
 class ForwardResult:
     logits: torch.Tensor
     past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]]
-    hidden_states: Optional[List[torch.Tensor]] = None  # @ gary
     exit_query_cache: Optional[List[torch.Tensor]] = None
+    hidden_states: Optional[List[torch.Tensor]] = None
 
 # Copied from transformers.models.bart.modeling_bart.BartDecoder._prepare_decoder_attention_mask
 def _prepare_decoder_attention_mask(model, attention_mask, input_shape, inputs_embeds, past_key_values_length):
@@ -188,9 +188,8 @@ def forward(
         inputs_embeds,
         past_key_values_length,
     )
-
-    hidden_states = inputs_embeds
     all_hidden_states = []
+    hidden_states = inputs_embeds
     for decoder_layer in model.model.layers:
         hidden_states, past_key_values = decoder_layer(
             hidden_states,
@@ -202,6 +201,7 @@ def forward(
             padding_mask=None,
         )
         all_hidden_states.append(hidden_states.clone())
+
     past_key_values = past_key_values.to_legacy_cache()
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
