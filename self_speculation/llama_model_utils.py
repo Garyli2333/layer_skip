@@ -17,6 +17,7 @@ class ForwardResult:
     past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]]
     exit_query_cache: Optional[List[torch.Tensor]] = None
     hidden_states: Optional[List[torch.Tensor]] = None
+    last_processed_layer: Optional[int] = None
 
 # Copied from transformers.models.bart.modeling_bart.BartDecoder._prepare_decoder_attention_mask
 def _prepare_decoder_attention_mask(model, attention_mask, input_shape, inputs_embeds, past_key_values_length):
@@ -207,7 +208,7 @@ def forward(
     logits = model.lm_head(hidden_states)
 
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values,hidden_states=all_hidden_states
+        logits=logits, past_key_values=past_key_values,hidden_states=all_hidden_states,last_processed_layer=len(model.model.layers)
     )
 
 
@@ -276,7 +277,7 @@ def forward_early(
 
     logits = model.lm_head(hidden_states)
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
+        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states,last_processed_layer=len(model.model.layers)
     )
 
 
@@ -394,5 +395,5 @@ def forward_remainder(
     logits = model.lm_head(hidden_states)
 
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
+        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states,last_processed_layer=len(model.model.layers)
     )

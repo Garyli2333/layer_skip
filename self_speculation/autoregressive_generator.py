@@ -121,6 +121,8 @@ class AutoRegressiveGenerationStrategyWithCALM(GenerationStrategy):
                     past_key_values,
                 )
 
+            print("layer_info", model_output.last_processed_layer)
+
             logits = model_output.logits
             if logits_processors:
                 logits = logits_processors(input_ids, logits)
@@ -158,7 +160,6 @@ class AutoRegressiveGenerationStrategyWithCALM(GenerationStrategy):
                 conf_method=generation_config.conf_method,
             )
 
-
             exit_now = should_exit(confidence, generation_config.conf_threshold)
 
             # Update CALM metrics
@@ -166,8 +167,8 @@ class AutoRegressiveGenerationStrategyWithCALM(GenerationStrategy):
 
             # Adjust exit_layer based on confidence
             if exit_now.any():
-
-                generation_config.exit_layer = generation_config.min_exit_layer
+                generation_config.exit_layer = current_layer
+                # generation_config.exit_layer = generation_config.min_exit_layer
 
             # Check stopping criteria
             if stopping_criteria:
