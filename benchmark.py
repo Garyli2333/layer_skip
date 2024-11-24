@@ -38,7 +38,7 @@ from self_speculation.generator_base import (
     HuggingfaceLlamaGenerator,
 )
 
-from self_speculation.self_speculation_generator import SelfSpeculativeGenerationStrategy,SelfSpeculativeGenerationStrategyWithCALM,GenerationStrategyWithCALM
+from self_speculation.self_speculation_generator import SelfSpeculativeGenerationStrategy,SelfSpeculativeGenerationStrategyWithCALM
 
 log = logging.getLogger(__name__)
 
@@ -166,8 +166,6 @@ def benchmark(
         generation_strategy: GenerationStrategy = SelfSpeculativeGenerationStrategy()
     elif generation_config.generation_strategy == "self_speculative_with_early_exit":
         generation_strategy: GenerationStrategy = SelfSpeculativeGenerationStrategyWithCALM()
-    elif generation_config.generation_strategy == "CAML":
-        generation_strategy: GenerationStrategy = GenerationStrategyWithCALM()
     else:
         raise Exception(
             f"Unsupported generation strategy: {generation_config.generation_strategy}"

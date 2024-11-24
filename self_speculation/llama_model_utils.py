@@ -281,6 +281,7 @@ def forward_early(
     )
 
 
+
 # TODO: update forward_remainder(...) to use transformers' new KV cache implementation rather than legacy.
 def forward_remainder(
     model: transformers.LlamaForCausalLM,
