@@ -201,14 +201,14 @@ def forward(
             use_cache=True,
             padding_mask=None,
         )
-        all_hidden_states.append(hidden_states.clone())
+    all_hidden_states.append(hidden_states.clone())
 
     past_key_values = past_key_values.to_legacy_cache()
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
 
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values,hidden_states=all_hidden_states,last_processed_layer=len(model.model.layers)
+        logits=logits, past_key_values=past_key_values,hidden_states=all_hidden_states
     )
 
 
@@ -263,7 +263,7 @@ def forward_early(
             use_cache=True,
             padding_mask=None,
         )
-        all_hidden_states.append(hidden_states.clone())
+    all_hidden_states.append(hidden_states.clone())
 
     past_key_values = past_key_values.to_legacy_cache()
 
@@ -277,7 +277,7 @@ def forward_early(
 
     logits = model.lm_head(hidden_states)
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states,last_processed_layer=len(model.model.layers)
+        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
     )
 
 
@@ -367,7 +367,7 @@ def forward_remainder(
                 use_cache=True,
                 padding_mask=None,
             )
-            all_hidden_states.append(hidden_states.clone())
+
         else:
             if full_hidden_states is None and exit_query_cache is not None:
                 # first time seeing the full hidden states, we need to rely on the
@@ -389,12 +389,12 @@ def forward_remainder(
                 use_cache=True,
                 padding_mask=None,
             )
-            all_hidden_states.append(hidden_states.clone())
+    all_hidden_states.append(hidden_states.clone())
 
     past_key_values = past_key_values.to_legacy_cache()
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
 
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states,last_processed_layer=len(model.model.layers)
+        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
     )
