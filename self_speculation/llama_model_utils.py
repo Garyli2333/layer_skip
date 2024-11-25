@@ -24,7 +24,6 @@ class ForwardResult:
     past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]]
     exit_query_cache: Optional[List[torch.Tensor]] = None
     hidden_states: Optional[List[torch.Tensor]] = None
-    last_processed_layer: Optional[int] = None
 
 # Copied from transformers.models.bart.modeling_bart.BartDecoder._prepare_decoder_attention_mask
 def _prepare_decoder_attention_mask(model, attention_mask, input_shape, inputs_embeds, past_key_values_length):
@@ -406,7 +405,6 @@ def forward_remainder(
         logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
     )
 
-
 def forward_early_with_CALM(
     model: transformers.LlamaForCausalLM,
     input_ids: torch.Tensor,
@@ -448,8 +446,7 @@ def forward_early_with_CALM(
 
     hidden_states = inputs_embeds
     prev_state = hidden_states.clone()
-    all_hidden_states = []
-    for decoder_layer in model.model.layers:
+    for layer_idx, decoder_layer in enumerate(model.model.layers):
         hidden_states, past_key_values = decoder_layer(
             hidden_states,
             attention_mask=attention_mask,
@@ -459,23 +456,20 @@ def forward_early_with_CALM(
             use_cache=True,
             padding_mask=None,
         )
-        all_hidden_states.append(hidden_states.clone())
-
         current_logits = model.lm_head(hidden_states)
         last_token_logits = current_logits[:, -1, :]
         new_state = hidden_states.clone()
 
         confidence = compute_confidence(
-            logits=last_token_logits,
-            prev_state=prev_state[:, -1, :],  # [batch_size, hidden_size]
-            new_state=new_state[:, -1, :],  # [batch_size, hidden_size]
-            conf_method=generation_config.conf_method,
+            logits=last_token_logits.float(),
+            prev_state=prev_state[:, -1, :].float(),  # [batch_size, hidden_size]
+            new_state=new_state[:, -1, :].float(),  # [batch_size, hidden_size]
+            conf_method=GenerationConfig.conf_method,
         )  # [batch_size]
-
         # Decide whether to exit
-        exit_now = should_exit(confidence, generation_config.conf_threshold)
+        exit_now = should_exit(confidence, GenerationConfig.conf_threshold)
         # satify confidence or minimal exit layer
-        if exit_now|(decoder_layer==model.model.layers[exit_layer]):
+        if (exit_now |((layer_idx+2)==exit_layer)):
             break
         prev_state = new_state.clone()
 
@@ -491,6 +485,11 @@ def forward_early_with_CALM(
     hidden_states = model.model.norm(hidden_states)
 
     logits = model.lm_head(hidden_states)
+
+    GenerationConfig.final_exit_layer=layer_idx+2
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
+        logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache
     )
+
+
+

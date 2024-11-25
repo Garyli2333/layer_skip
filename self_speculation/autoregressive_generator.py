@@ -20,6 +20,7 @@ from self_speculation.llama_model_utils import (
     decode_next_token,
     forward,
     forward_early,
+    forward_early_with_CALM
 )
 
 import torch.nn.functional as F
