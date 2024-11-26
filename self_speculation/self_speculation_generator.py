@@ -370,7 +370,7 @@ class SelfSpeculativeGenerationStrategyWithCALM(GenerationStrategy):
             model,
             prefill_token_ids.int(),
             past_key_values,
-            GenerationConfig.final_exit_layer, # new exit layer
+            exit_layer, # new exit layer
             exit_query_cache,
         )
         logits = verify_results.logits
