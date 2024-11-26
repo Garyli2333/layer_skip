@@ -7,7 +7,7 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
-
+import torch.nn.functional as F
 import torch
 import transformers
 
@@ -411,6 +411,7 @@ def forward_early_with_CALM(
     past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
     exit_layer: int,
     exit_query_cache: Optional[List[torch.Tensor]],
+    position: int,
 ) -> ForwardResult:
     device = input_ids.device
     batch_size, seq_length = input_ids.shape
@@ -460,14 +461,26 @@ def forward_early_with_CALM(
         last_token_logits = current_logits[:, -1, :]
         new_state = hidden_states.clone()
 
+
         confidence = compute_confidence(
             logits=last_token_logits.float(),
             prev_state=prev_state[:, -1, :].float(),  # [batch_size, hidden_size]
             new_state=new_state[:, -1, :].float(),  # [batch_size, hidden_size]
             conf_method=GenerationConfig.conf_method,
         )  # [batch_size]
+
+        if GenerationConfig.position_adjusted_threshold:
+            adjusted_threshold = (
+                GenerationConfig.conf_threshold
+                * torch.exp(-GenerationConfig.position_temp * position / GenerationConfig.max_steps)
+                / 10
+                + 9 * GenerationConfig.conf_threshold / 10
+            )
+        else:
+            adjusted_threshold = GenerationConfig.conf_threshold
+
         # Decide whether to exit
-        exit_now = should_exit(confidence, GenerationConfig.conf_threshold)
+        exit_now = should_exit(confidence, adjusted_threshold)
         # satify confidence or minimal exit layer
         if (exit_now |((layer_idx+2)==exit_layer)):
             break
