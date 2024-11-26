@@ -303,6 +303,9 @@ def forward_remainder(
     draft_past_key_values_length: int = 0
     full_past_key_values_length: int = 0
 
+    # Print input information
+    print(f"Input tensor shape: {input_ids.shape}")
+
     if past_key_values is not None and past_key_values[0] is not None:
         # it's okay to use the first layer because the draft model necessairly computes it
         draft_past_key_values_length = past_key_values[0][0].shape[2]
@@ -317,6 +320,11 @@ def forward_remainder(
             full_past_key_values_length = 0
 
         seq_length_with_past = num_tokens_to_generate + draft_past_key_values_length
+
+    # Print past_key_values details
+    print(f"draft_past_key_values_length: {draft_past_key_values_length}")
+    print(f"full_past_key_values_length: {full_past_key_values_length}")
+
     past_key_values = transformers.cache_utils.DynamicCache.from_legacy_cache(past_key_values)
 
     inputs_embeds = model.model.embed_tokens(input_ids)
@@ -355,6 +363,9 @@ def forward_remainder(
     full_hidden_states: Optional[torch.FloatTensor] = None
     for idx, decoder_layer in enumerate(model.model.layers):
         is_early_exit = idx < exit_layer
+
+        print(f"Processing layer {idx + 1}/{len(model.model.layers)}. Early exit: {is_early_exit}")
+
         past_key_value = (
             past_key_values[idx]
             if (past_key_values is not None and idx < len(past_key_values))
@@ -376,6 +387,9 @@ def forward_remainder(
 
         else:
             if full_hidden_states is None and exit_query_cache is not None:
+
+                print(f"Using exit_query_cache for layer {idx + 1}")
+
                 # first time seeing the full hidden states, we need to rely on the
                 # query cache
                 # only use if exit query cache exists, if not this is our first call
@@ -395,11 +409,24 @@ def forward_remainder(
                 use_cache=True,
                 padding_mask=None,
             )
+
+    # Print hidden state and past key value details
+    print(f"Hidden state shape after layer {idx + 1}: {hidden_states.shape}")
+    if past_key_value is not None:
+        print(f"Past key value shapes after layer {idx + 1}: {[pkv.shape for pkv in past_key_value]}")
+
     all_hidden_states.append(hidden_states.clone())
 
     past_key_values = past_key_values.to_legacy_cache()
+
+    # Print exit query cache details
+    if exit_query_cache is not None:
+        print(f"exit_query_cache shape before final layer: {exit_query_cache.shape}")
+
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
+
+    print(f"Final logits shape: {logits.shape}")
 
     return ForwardResult(
         logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache,hidden_states=all_hidden_states
@@ -493,7 +520,8 @@ def forward_early_with_CALM(
     if exit_query_cache is None:
         exit_query_cache = hidden_states
     else:
-        exit_query_cache = torch.cat([exit_query_cache, hidden_states], dim=1)
+        # exit_query_cache = torch.cat([exit_query_cache, hidden_states], dim=1)
+        exit_query_cache = torch.cat([exit_query_cache, hidden_states[:, -seq_length:]], dim=1)
 
     hidden_states = model.model.norm(hidden_states)
 
@@ -503,6 +531,4 @@ def forward_early_with_CALM(
     return ForwardResult(
         logits=logits, past_key_values=past_key_values, exit_query_cache=exit_query_cache
     )
-
-
 
