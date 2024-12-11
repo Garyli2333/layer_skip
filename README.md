@@ -54,3 +54,27 @@ In order to access each model:
 Once you run those steps, the commands below to run the LayerSkip checkpoints should work.
 
 ```
+
+## Benchmark
+
+To benchmark on a dataset:
+
+```console
+$ torchrun benchmark.py --model facebook/layerskip-llama2-7B \
+    --dataset cnn_dm_summarization \
+    --num_samples 100 \
+    --generation_strategy self_speculative \
+    --exit_layer 8 \
+    --num_speculations 6 \
+    --output_dir ./logs
+```
+
+Tips:
+- You can specify different tasks by modifying the `--dataset` argument:
+    - `cnn_dm_summarization`: CNN/DM Summarization
+    - `xsum_summarization`: XSUM Summarization
+    - `cnn_dm_lm`: CNN/DM Language Modeling (given the first few words of an article, generate the remaining article)
+    - `human_eval`: HumanEval Coding
+- By default, the tasks run as 0-shot. You can change to any specified `n`-shot by specifying the `--n_shot` argument.
+- By default we enable sampling, while the results reported in the paper were greedy decoding without sampling. You may change the sampling behaviour using the `--sample`, `--temperature`, `--top_p`, and `--top_k` arguments.
+- You may run `python benchmark.py --help` for details on different command-line arguments.
