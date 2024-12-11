@@ -1,14 +1,31 @@
-# LayerSkip
-<a href='https://huggingface.co/collections/facebook/layerskip-666b25c50c8ae90e1965727a'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue'></a> [![License: CC BY-NC](https://img.shields.io/badge/License-CC_BY--NC-lightgrey.svg)](./LICENSE) [![YouTube](https://badges.aleen42.com/src/youtube.svg)](https://www.youtube.com/watch?v=oPxdfVVmLP8) [![arXiv](https://img.shields.io/badge/arXiv-2404.16710-b31b1b.svg)](https://arxiv.org/abs/2404.16710) [![alphaXiv](https://img.shields.io/badge/alphaXiv-2404.16710-9a2037.svg)](https://www.alphaxiv.org/abs/2404.16710)
+# Dynamic Early Exit and Layer Skipping
 
-This code base is the modified implementation of [LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding](https://arxiv.org/abs/2404.16710).
+## Project Overview
+This repository implements **Dynamic Early Exit** and **Dynamic Layer Skipping**, techniques designed to accelerate inference for **Large Language Models (LLMs)** like Llama2. These strategies enhance efficiency in real-time applications such as conversational AI, live translation, and code generation.
 
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/1fdd91d9-37ea-4b42-b5be-579fb5e1f2f2" width="500">
-</div>
+Building upon prior works like **LayerSkip**, we present a unified framework for dynamic inference optimization, achieving significant speedups while maintaining high-quality outputs across diverse tasks.
 
+---
+
+## Key Features
+
+- **Dynamic Early Exit**:
+  - Implements token-level confidence thresholds to dynamically exit inference early, optimizing resource usage for simpler inputs.
+  
+- **Dynamic Layer Skipping**:
+  - Skips non-critical layers during inference, determined by input complexity and optimized through **Bayesian Optimization**.
+
+- **Self-Speculative Decoding**:
+  - Combines draft and verify mechanisms to accelerate decoding with minimal accuracy loss.
+
+- **Interpretability Tools**:
+  - Includes layer-wise token prediction visualizations and cosine similarity analysis for model behavior insights.
+
+---
 ## Getting Started
-
+   git clone https://github.com/Garyli2333/layer_skip.git
+   cd layer_skip
+   
 - Setup environment:
 ```console
 $ conda create --name layer_skip python=3.10
